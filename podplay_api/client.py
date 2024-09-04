@@ -19,6 +19,7 @@ from podplay_api.const import (
     LOGGER as _LOGGER,
     PODPLAY_API_URL,
     PODPLAY_USER_AGENT,
+    TIMEOUT,
 )
 from podplay_api.exceptions import (
     PodPlayApiConnectionError,
@@ -43,7 +44,7 @@ class PodPlayClient:
 
     language: PodPlayLanguage = PodPlayLanguage.EN
 
-    request_timeout: int = 8
+    request_timeout: int = TIMEOUT
     session: ClientSession | None = None
 
     _close_session: bool = False

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "podplay-api"
-version = "0.0.1"
+version = "0.0.0"
 description = "A client library for using the podplay.com web API"
 readme = "README.md"
 authors = ["Bendik R. Brenne <bendik@konstant.no>"]
