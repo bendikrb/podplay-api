@@ -77,14 +77,14 @@ podplay-api is licensed under the MIT license. See the LICENSE file for more det
 
 If you have any questions or need assistance with the library, you can contact the project maintainer at @bendikrb.
 
-[license-shield]: https://img.shields.io/github/license/bendikrb/podplay_api.svg
-[license]: https://github.com/bendikrb/podplay_api/blob/main/LICENSE
+[license-shield]: https://img.shields.io/github/license/bendikrb/podplay-api.svg
+[license]: https://github.com/bendikrb/podplay-api/blob/main/LICENSE
 [releases-shield]: https://img.shields.io/pypi/v/podplay-api
-[releases]: https://github.com/bendikrb/podplay_api/releases
-[build-shield]: https://github.com/bendikrb/podplay_api/actions/workflows/tests.yaml/badge.svg
-[build]: https://github.com/bendikrb/podplay_api/actions/workflows/tests.yaml
+[releases]: https://github.com/bendikrb/podplay-api/releases
+[build-shield]: https://github.com/bendikrb/podplay-api/actions/workflows/tests.yaml/badge.svg
+[build]: https://github.com/bendikrb/podplay-api/actions/workflows/tests.yaml
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2024.svg
 [py-versions-shield]: https://img.shields.io/pypi/pyversions/podplay-api
 [py-versions]: https://pypi.org/project/podplay-api/
-[codecov-shield]: https://codecov.io/gh/bendikrb/podplay_api/graph/badge.svg?token=011O5N9MKL
-[codecov]: https://codecov.io/gh/bendikrb/podplay_api
+[codecov-shield]: https://codecov.io/gh/bendikrb/podplay-api/graph/badge.svg?token=011O5N9MKL
+[codecov]: https://codecov.io/gh/bendikrb/podplay-api
