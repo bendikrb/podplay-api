@@ -25,25 +25,37 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.12"
-rich = "^13.6.0"
-pathlib = "^1.0.1"
 aiohttp = "^3.9.5"
 async-timeout = "^4.0.3"
-mashumaro = "^3.12"
-orjson = "^3.10.3"
 asyncstdlib = "^3.12.5"
+mashumaro = {extras = ["orjson"], version = "^3.13.1"}
+orjson = "^3.10.3"
+pathlib = "^1.0.1"
+rich = "^13.8.1"
 
 [tool.poetry.group.dev.dependencies]
-pylint = "3.0.2"
-ruff = "0.1.3"
-pytest = "^7.4.2"
+aresponses = "^3.0.0"
+covdefaults = "2.3.0"
+pylint = "3.2.7"
+pytest = "^8.3.3"
+pytest-asyncio = "*"
+pytest-cov = "^5.0.0"
+ruff = "0.6.4"
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.coverage.run]
+plugins = ["covdefaults"]
+source = ["podplay_api"]
 
 [tool.poetry.scripts]
 podplay = "podplay_api.cli:main"
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.pytest.ini_options]
+addopts = "--cov"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff.lint]
 ignore = [
@@ -68,13 +80,6 @@ ignore = [
 ]
 select = ["ALL"]
 
-[tool.ruff.lint.per-file-ignores]
-"podplay_api/const.py" = ["INP001"]
-
-[tool.ruff.lint.isort]
-force-sort-within-sections = true
-combine-as-imports = true
-
 [tool.pylint."MESSAGES CONTROL"]
 disable = [
     "format",
@@ -87,3 +92,24 @@ disable = [
     "missing-function-docstring",
     "missing-module-docstring",
 ]
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+combine-as-imports = true
+known-first-party = ["podplay_api"]
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = [
+    "mashumaro.mixins.orjson.DataClassORJSONMixin",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 25
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
