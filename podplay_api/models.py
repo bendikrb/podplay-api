@@ -1,15 +1,17 @@
 """podplay_api models."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
 
+from mashumaro import field_options
 from mashumaro.config import BaseConfig
 from mashumaro.mixins.orjson import DataClassORJSONMixin
 
-if TYPE_CHECKING:
-    from datetime import datetime
+from .const import IMAGE_WIDTHS
+from .utils import build_image_url
 
 
 @dataclass
@@ -25,12 +27,6 @@ class PodPlayLanguage(StrEnum):
     FI = "fi"
     EN = "en"
 
-    def __repr__(self):
-        return self.value.lower()
-
-    def uri_segment(self):
-        return f"/{self.value}"
-
 
 class PodPlayRegion(StrEnum):
     NO = "no"
@@ -38,8 +34,15 @@ class PodPlayRegion(StrEnum):
     FI = "fi"
     GLOBAL = "en"
 
-    def __repr__(self):
-        return self.value.lower()
+
+class PodcastType(StrEnum):
+    SERIAL = "serial"
+    EPISODIC = "episodic"
+
+
+class EpisodeType(StrEnum):
+    FULL = "full"
+    TRAILER = "trailer"
 
 
 @dataclass
@@ -49,6 +52,18 @@ class PodPlayCategory(BaseDataClassORJSONMixin):
     parent_id: int | None = None
     children: list[PodPlayCategory] = field(default_factory=list)
 
+    def __repr__(self):
+        return f"({self.id}){self.name}"
+
+
+@dataclass
+class PodPlayImage:
+    url: str
+    width: int
+
+    def __repr__(self):
+        return f"[{self.width}] {self.url}"
+
 
 @dataclass
 class PodPlayPodcast(BaseDataClassORJSONMixin):
@@ -56,16 +71,27 @@ class PodPlayPodcast(BaseDataClassORJSONMixin):
     title: str
     author: str
     image: str
+    images: list[PodPlayImage] = field(init=False)
     original: bool
     description: str
     language_iso: str
     popularity: float
     category_id: list[int] | None = field(default=None)
+    category: list[PodPlayCategory] | None = field(init=False, default=None)
     link: str | None = field(default=None)
     rss: str | None = field(default=None)
     seasonal: bool | None = field(default=None)
     slug: str | None = field(default=None)
-    type: str | None = field(default=None)
+    type: PodcastType | None = field(default=None)
+
+    def __post_init__(self):
+        self.images = [
+            PodPlayImage(
+                str(build_image_url(self.image, width=w)),
+                w,
+            )
+            for w in IMAGE_WIDTHS
+        ]
 
 
 @dataclass
@@ -73,14 +99,16 @@ class PodPlayEpisode(BaseDataClassORJSONMixin):
     id: int
     title: str
     description: str
-    duration: int
     encoded: bool
     exclusive: bool
     mime_type: str
     podcast_id: int
-    published: datetime
+    published: datetime = field(
+        metadata=field_options(deserialize=datetime.fromtimestamp)
+    )
     slug: str
-    type: str
+    type: EpisodeType
     url: str
+    duration: int | None = None
     episode: int | None = None
     season: int | None = None

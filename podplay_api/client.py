@@ -1,18 +1,17 @@
 """PodPlay API."""
+
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from http import HTTPStatus
-import json
-import math
 import socket
 from typing import Literal, Self
 
-from aiohttp.client import ClientError, ClientSession
+from aiohttp.client import ClientError, ClientResponseError, ClientSession
 from aiohttp.hdrs import METH_GET
 import async_timeout
 from asyncstdlib.functools import cached_property
+import orjson
 from yarl import URL
 
 from podplay_api.const import (
@@ -25,7 +24,6 @@ from podplay_api.exceptions import (
     PodPlayApiConnectionError,
     PodPlayApiConnectionTimeoutError,
     PodPlayApiError,
-    PodPlayApiRateLimitError,
 )
 from podplay_api.models import (
     PodPlayCategory,
@@ -41,6 +39,8 @@ PagingOrderType = Literal["asc", "desc"]
 @dataclass
 class PodPlayClient:
     """PodPlay API client."""
+
+    user_agent: str | None = None
 
     language: PodPlayLanguage = PodPlayLanguage.EN
 
@@ -60,10 +60,18 @@ class PodPlayClient:
     ) -> str | dict[any, any] | list | None:
         """Make a request."""
         url = self._build_request_url(uri)
-        _LOGGER.debug("Executing %s API request to %s.", method, url)
         headers = kwargs.get("headers")
         headers = self.request_header if headers is None else dict(headers)
 
+        params = kwargs.get("params")
+        if params is not None:
+            kwargs.update(params={k: v for k, v in params.items() if v is not None})
+
+        _LOGGER.debug(
+            "Executing %s API request to %s.",
+            method,
+            url.with_query(kwargs.get("params")),
+        )
         _LOGGER.debug("With headers: %s", headers)
         if self.session is None:
             self.session = ClientSession()
@@ -71,71 +79,53 @@ class PodPlayClient:
             self._close_session = True
 
         try:
-            with async_timeout.timeout(self.request_timeout):
+            async with async_timeout.timeout(self.request_timeout):
                 response = await self.session.request(
                     method,
                     url,
                     **kwargs,
                     headers=headers,
                 )
+                response.raise_for_status()
         except asyncio.TimeoutError as exception:
             raise PodPlayApiConnectionTimeoutError(
                 "Timeout occurred while connecting to the PodPlay API"
             ) from exception
-        except (ClientError, socket.gaierror) as exception:
+        except (ClientError, ClientResponseError, socket.gaierror) as exception:
             raise PodPlayApiConnectionError(
                 "Error occurred while communicating with the PodPlay API"
             ) from exception
-
         content_type = response.headers.get("Content-Type", "")
-        # Error handling
-        if (response.status // 100) in [4, 5]:
-            contents = await response.read()
-            response.close()
-
-            if response.status == HTTPStatus.TOO_MANY_REQUESTS:
-                raise PodPlayApiRateLimitError(
-                    "Rate limit error has occurred with the PodPlay API"
-                )
-
-            if content_type == "application/json":
-                raise PodPlayApiError(response.status, json.loads(contents.decode("utf8")))
-            raise PodPlayApiError(response.status, {"message": contents.decode("utf8")})
-
-        # Handle empty response
-        if response.status == HTTPStatus.NO_CONTENT:
-            _LOGGER.warning("Request to <%s> resulted in status 204. Your dataset could be out of date.", url)
-            return None
-
-        if "application/json" in content_type:
-            result = await response.json()
-            _LOGGER.debug("Response: %s", str(result))
-            return result
-        result = await response.text()
-        _LOGGER.debug("Response: %s", str(result))
-        return result
+        text = await response.text()
+        if "application/json" not in content_type:
+            msg = "Unexpected response from the PodPlay API"
+            raise PodPlayApiError(
+                msg,
+                {"Content-Type": content_type, "response": text},
+            )
+        return orjson.loads(text)
 
     @property
     def request_header(self):
         """Generate default headers."""
-
         return {
-            "User-Agent": PODPLAY_USER_AGENT,
             "Accept": "application/json",
+            "User-Agent": self.user_agent or PODPLAY_USER_AGENT,
         }
-
 
     async def _get_pages(
         self,
         uri,
-        get_pages: int = math.inf,
-        page_size: int = 50,
+        get_pages: int | None = None,
+        page_size: int | None = None,
         params: dict | None = None,
         order: PagingOrderType = "desc",
         items_key: str | None = None,
     ):
         offset = 0
         params = params or {}
+        get_pages = get_pages or 99
+        page_size = page_size or 50
         data = []
 
         try:
@@ -149,12 +139,16 @@ class PodPlayClient:
                         **params,
                     },
                 )
+                total = new_results.get("total")
                 if not isinstance(new_results, list) and items_key is not None:
                     new_results = new_results.get(items_key, [])
                 if not new_results:
                     break
                 data.extend(new_results)
                 offset += len(new_results)
+
+                if offset >= total:
+                    break
         except PodPlayApiError as err:
             _LOGGER.warning("Error occurred while fetching pages from %s: %s", uri, err)
 
@@ -181,26 +175,58 @@ class PodPlayClient:
             params={
                 "category_id": category_id,
                 "original": str(originals).lower(),
-            })
+            },
+        )
         return [PodPlayPodcast.from_dict(d) for d in data["results"]]
 
-    async def get_popular_podcasts(
-        self,
-        category: list[PodPlayCategory] | None = None,
-        pages: int | None = None,
-        page_size: int | None = None,
-    ) -> list[PodPlayPodcast]:
-        pass
+    async def _process_podcast(self, podcast: PodPlayPodcast) -> PodPlayPodcast:
+        podcast.category = await self.resolve_category_ids(podcast.category_id)
+        return podcast
 
     async def get_podcast(self, podcast_id: int) -> PodPlayPodcast:
         data = await self._request(
             f"podcast/{podcast_id}",
         )
-        return PodPlayPodcast.from_dict(data)
+        return await self._process_podcast(PodPlayPodcast.from_dict(data["podcast"]))
 
-    async def get_podcast_episodes(self, podcast_id: int) -> list[PodPlayEpisode]:
+    async def get_podcasts(self, podcast_id: list[int]) -> list[PodPlayPodcast]:
+        data = await self._request(
+            "podcast-by-id",
+            params={
+                "id": [str(p) for p in podcast_id],
+            },
+        )
+        return [
+            await self._process_podcast(PodPlayPodcast.from_dict(d))
+            for d in data["results"]
+        ]
+
+    async def get_episode(self, episode_id: int) -> PodPlayEpisode:
+        data = await self._request(
+            f"episode/{episode_id}",
+        )
+        return PodPlayEpisode.from_dict(data["episode"])
+
+    async def get_episodes(self, episode_id: list[int]) -> list[PodPlayEpisode]:
+        data = await self._request(
+            "episode-by-id",
+            params={
+                "id": [str(e) for e in episode_id],
+            },
+        )
+        return [PodPlayEpisode.from_dict(d) for d in data["results"]]
+
+    async def get_podcast_episodes(
+        self,
+        podcast_id: int,
+        pages: int | None = None,
+        page_size: int | None = None,
+    ) -> list[PodPlayEpisode]:
         data = await self._get_pages(
             f"podcast/{podcast_id}/episode",
+            get_pages=pages,
+            page_size=page_size,
+            items_key="results",
         )
 
         return [PodPlayEpisode.from_dict(d) for d in data]
@@ -208,19 +234,17 @@ class PodPlayClient:
     async def search_podcast(
         self,
         search: str,
-        pages: int | None = None,
-        page_size: int | None = None,
     ) -> list[PodPlayPodcast]:
-        podcasts = await self._get_pages(
+        results = await self._request(
             "search",
             params={
                 "q": search,
             },
-            get_pages=pages,
-            page_size=page_size,
-            items_key="results",
         )
-        return [PodPlayPodcast.from_dict(data) for data in podcasts]
+        return [
+            await self._process_podcast(PodPlayPodcast.from_dict(data))
+            for data in results["results"]
+        ]
 
     async def get_episode_ids(self, podcast_id: int) -> list[int]:
         episodes = await self.get_podcast_episodes(podcast_id)
